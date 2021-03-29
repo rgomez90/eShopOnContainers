@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.ServiceBus;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.eShopOnContainers.BuildingBlocks.EventBus;
 using Microsoft.eShopOnContainers.BuildingBlocks.EventBus.Abstractions;
 using Microsoft.eShopOnContainers.BuildingBlocks.EventBusRabbitMQ;
@@ -78,11 +77,12 @@ namespace Webhooks.API
                 app.UsePathBase(pathBase);
             }
 
-            app.UseCors("CorsPolicy");
 
-            ConfigureAuth(app);
 
             app.UseRouting();
+            app.UseCors("CorsPolicy");
+            ConfigureAuth(app);
+
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapDefaultControllerRoute();
@@ -111,14 +111,8 @@ namespace Webhooks.API
 
         protected virtual void ConfigureAuth(IApplicationBuilder app)
         {
-            /*
-            if (Configuration.GetValue<bool>("UseLoadTest"))
-            {
-                app.UseMiddleware<ByPassAuthMiddleware>();
-            }
-            */
-
             app.UseAuthentication();
+            app.UseAuthorization();
         }
 
         protected virtual void ConfigureEventBus(IApplicationBuilder app)
@@ -172,11 +166,6 @@ namespace Webhooks.API
                                          //Configuring Connection Resiliency: https://docs.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency 
                                          sqlOptions.EnableRetryOnFailure(maxRetryCount: 15, maxRetryDelay: TimeSpan.FromSeconds(30), errorNumbersToAdd: null);
                                      });
-
-                // Changing default behavior when client evaluation occurs to throw. 
-                // Default in EF Core would be to log a warning when client evaluation is performed.
-                options.ConfigureWarnings(warnings => warnings.Throw(RelationalEventId.QueryClientEvaluationWarning));
-                //Check Client vs. Server evaluation: https://docs.microsoft.com/en-us/ef/core/querying/client-eval
             });
 
             return services;
@@ -218,8 +207,6 @@ namespace Webhooks.API
         }
         public static IServiceCollection AddEventBus(this IServiceCollection services, IConfiguration configuration)
         {
-            var subscriptionClientName = configuration["SubscriptionClientName"];
-
             if (configuration.GetValue<bool>("AzureServiceBusEnabled"))
             {
                 services.AddSingleton<IEventBus, EventBusServiceBus>(sp =>
@@ -230,7 +217,7 @@ namespace Webhooks.API
                     var eventBusSubcriptionsManager = sp.GetRequiredService<IEventBusSubscriptionsManager>();
 
                     return new EventBusServiceBus(serviceBusPersisterConnection, logger,
-                        eventBusSubcriptionsManager, subscriptionClientName, iLifetimeScope);
+                        eventBusSubcriptionsManager, iLifetimeScope);
                 });
 
             }
@@ -238,6 +225,7 @@ namespace Webhooks.API
             {
                 services.AddSingleton<IEventBus, EventBusRabbitMQ>(sp =>
                 {
+                    var subscriptionClientName = configuration["SubscriptionClientName"];
                     var rabbitMQPersistentConnection = sp.GetRequiredService<IRabbitMQPersistentConnection>();
                     var iLifetimeScope = sp.GetRequiredService<ILifetimeScope>();
                     var logger = sp.GetRequiredService<ILogger<EventBusRabbitMQ>>();
@@ -297,9 +285,9 @@ namespace Webhooks.API
             {
                 services.AddSingleton<IServiceBusPersisterConnection>(sp =>
                 {
-                    var logger = sp.GetRequiredService<ILogger<DefaultServiceBusPersisterConnection>>();
                     var serviceBusConnection = new ServiceBusConnectionStringBuilder(configuration["EventBusConnection"]);
-                    return new DefaultServiceBusPersisterConnection(serviceBusConnection, logger);
+                    var subscriptionClientName = configuration["SubscriptionClientName"];
+                    return new DefaultServiceBusPersisterConnection(serviceBusConnection, subscriptionClientName);
                 });
             }
             else

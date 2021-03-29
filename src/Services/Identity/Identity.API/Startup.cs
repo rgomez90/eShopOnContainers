@@ -60,7 +60,7 @@ namespace Microsoft.eShopOnContainers.Services.Identity.API
                 {
                     opts.ApplicationDiscriminator = "eshop.identity";
                 })
-                .PersistKeysToRedis(ConnectionMultiplexer.Connect(Configuration["DPConnectionString"]), "DataProtection-Keys");
+                .PersistKeysToStackExchangeRedis(ConnectionMultiplexer.Connect(Configuration["DPConnectionString"]), "DataProtection-Keys");
             }
 
             services.AddHealthChecks()
@@ -128,7 +128,6 @@ namespace Microsoft.eShopOnContainers.Services.Identity.API
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
-                app.UseDatabaseErrorPage();
             }
             else
             {
@@ -154,6 +153,11 @@ namespace Microsoft.eShopOnContainers.Services.Identity.API
             app.UseForwardedHeaders();
             // Adds IdentityServer
             app.UseIdentityServer();
+
+            // Fix a problem with chrome. Chrome enabled a new feature "Cookies without SameSite must be secure", 
+            // the coockies shold be expided from https, but in eShop, the internal comunicacion in aks and docker compose is http.
+            // To avoid this problem, the policy of cookies shold be in Lax mode.
+            app.UseCookiePolicy(new CookiePolicyOptions { MinimumSameSitePolicy = AspNetCore.Http.SameSiteMode.Lax });
             app.UseRouting();
             app.UseEndpoints(endpoints =>
             {
